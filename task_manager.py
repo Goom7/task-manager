@@ -1,11 +1,21 @@
 import streamlit as st
 import json
 
-
-
-
 #Run: streamlit run task_manager.py
+#Password Protection
+if 'authenticated' not in st.session_state:
+    st.session_state.authenticated = False
 
+if not st.session_state.authenticated:
+    st.title('🔒 Login Required')
+    password = st.text_input("Enter Password", type='password')
+    if st.button('Login'):
+        if password == "Bane420sith": #password
+            st.session_state.authenticated = True
+            st.rerun()
+        else:
+            st.error("Incorrect password")
+    st.stop()
 
 
 
@@ -203,3 +213,4 @@ with col3:
                 st.session_state.monthly_tasks.pop(i)
                 save_tasks()
                 st.rerun()
+
