@@ -1,216 +1,245 @@
+import os
 import streamlit as st
-import json
+import requests
+from requests.auth import HTTPBasicAuth
+from streamlit import rerun
+import dotenv
 
-#Run: streamlit run task_manager.py
-#Password Protection
-if 'authenticated' not in st.session_state:
-    st.session_state.authenticated = False
+#Load ENV
+load_dotenv()
 
-if not st.session_state.authenticated:
-    st.title('🔒 Login Required')
-    password = st.text_input("Enter Password", type='password')
-    if st.button('Login'):
-        if password == "Bane420sith": #password
-            st.session_state.authenticated = True
-            st.rerun()
-        else:
-            st.error("Incorrect password")
+#Browser Config ---------------------------------------------------
+st.set_page_config(page_title='Task Manager', page_icon='📝',layout='wide')
+
+#SideBar -------------------------------------------------------
+with st.sidebar:
+    st.header('Filter')
+    filter_select = st.selectbox("Tasks",['All Tasks', 'Completed','Incomplete'])
+
+#Sheety API -------------------------------------------------------
+SHEETY_API = os.getenv("SHEETY_API")
+AUTH_USER = os.getenv("AUTH_USER")
+AUTH_PASS = os.getenv("AUTH_PASS")
+
+if not all([SHEETY_API,AUTH_USER,AUTH_PASS]):
+    st.error("Missing API Credentials, Please Check your .env File")
     st.stop()
 
 
 
-#Functions streamlit
+#Functions --------------------------------------------------------
+
+def create_local_task(task_desc,task_date,category_desc,priority):
+    task = {
+        'description': task_desc,
+        'date': task_date,
+        'category': category_desc,
+        'priority': priority,
+        'completed': False
+    }
+    return task
+
+def export_task_to_sheety(task):
+    sheety_data = {
+        'sheet1':{
+        'description': task['description'],
+        'date': str(task['date']),
+        'category': task['category'],
+        'priority': task['priority'],
+        'completed': task['completed']
+    }
+    }
+    try:
+        response = requests.post(
+            url=SHEETY_API,
+            json=sheety_data,
+            auth=HTTPBasicAuth(AUTH_USER,AUTH_PASS)
+        )
+        st.write(f'Status: {response.status_code}')
+        st.write(f'Response: {response.text}')
+        return response.json()
+    except Exception as e:
+        st.write(f'Exception : {e}')
+        return None
+
+def import_task_from_sheety():
+    try:
+        response = requests.get(
+            url=SHEETY_API,
+            auth=HTTPBasicAuth(AUTH_USER,AUTH_PASS))
+        data = response.json()
+        tasks_sheety = data.get('sheet1', [])
+        return tasks_sheety
+    except Exception as e:
+        st.error(f'Error loading tasks: {e}')
+        return []
+
+def edit_sheety_task(task_id, task):
+    sheety_data = {
+        'sheet1': {
+            'description': task['description'],
+            'date': str(task['date']),
+            'category': task['category'],
+            'priority': task['priority'],
+            'completed': task['completed']
+        }
+    }
+    try:
+        response = requests.put(
+            url=f'{SHEETY_API}/{task_id}',
+            json=sheety_data,
+            auth=HTTPBasicAuth(AUTH_USER,AUTH_PASS)
+        )
+    except Exception as e:
+        st.error(f'Error loading tasks: {e}')
+        return []
+
+def delete_sheety_task(task_id):
+    try:
+        response = requests.delete(
+            url=f'{SHEETY_API}/{task_id}',
+            auth=HTTPBasicAuth(AUTH_USER, AUTH_PASS)
+        )
+    except Exception as e:
+        st.error(f'Error deleting tasks: {e}')
+        return False
+
 def priority_color(priority):
     if priority == 'High':
         return 'red'
     elif priority == 'Medium':
-        return 'orange'
-    else: #low
+        return 'yellow'
+    else:
         return 'green'
 
+#Task Manager Display ---------------------------------------------
+st.title('Task Manager')
+st.markdown("---")
 
-#Functions json
-def save_tasks():
-    tasks_data = {
-        'daily_tasks': st.session_state.daily_tasks,
-        'weekly_tasks': st.session_state.weekly_tasks,
-        'monthly_tasks': st.session_state.monthly_tasks
-    }
-    with open('tasks.json','w') as f:
-        json.dump(tasks_data, f, default=str)
+#Initialize Task Section --------------------------------------------
+st.header('My Task')
+st.subheader('➕ Add New Task')
 
-def load_tasks():
-    try:
-        with open('tasks.json', 'r') as f:
-            tasks_data = json.load(f)
-            return tasks_data
-    except FileNotFoundError:
-        #If file doesn't exist. return empty lists
-        return {
-            'daily_tasks': [],
-            'weekly_tasks': [],
-            'monthly_tasks': []
-        }
 
-#Browser and config
-st.set_page_config(page_title='Task Manager', page_icon='📝', layout='wide')
+#Task Form -----------------------------------------------------------
+with st.form('task_form'):
+    task_desc = st.text_input('Task Description')
+    task_date = st.date_input('Date', format="MM/DD/YYYY")
+    category_desc = st.text_input('Category')
+    priority = st.selectbox('Priority',['High','Medium','Low'])
+    submitted = st.form_submit_button('Add Task')
+if submitted:
+    task = create_local_task(task_desc, task_date, category_desc, priority)
+    export_task_to_sheety(task)
+    st.success('Task Added!')
 
-#Main Page
-st.title('📝 Task Manager')
-st.markdown('Tracking Daily Tasks')
+
+#Task List Displayed -------------------------------------------------
 st.markdown('---')
+st.subheader('📋 Task List')
 
-#Initialize session state for storing tasks
-# Load saved tasks when app starts
-if 'daily_tasks' not in st.session_state:
-    saved_data = load_tasks()
-    st.session_state.daily_tasks = saved_data['daily_tasks']
-    st.session_state.weekly_tasks = saved_data['weekly_tasks']
-    st.session_state.monthly_tasks = saved_data['monthly_tasks']
+#Import Tasks from Sheety
+tasks = import_task_from_sheety()
+print(tasks)
 
-col1, col2, col3 = st.columns(3)
+#Initializing Session state for Editing
+if 'editing_task_id' not in st.session_state:
+    st.session_state.editing_task_id = None
 
-with col1:
-    st.header('Daily Tasks')
-    #Adding Task section
-    st.subheader('➕ Add New Task')
-    with st.form('daily_form'):
-        task_desc = st.text_input('Task Description')
-        task_date = st.date_input('Date')
-        priority = st.selectbox('Priority',['High','Medium','Low'])
-        submitted = st.form_submit_button('Add Task')
-    if submitted:
-        task = {
-            'description': task_desc,
-            'date': task_date,
-            'priority': priority,
-            'completed': False,
-        }
-        st.session_state.daily_tasks.append(task)
-        st.success('Task added!')
-        save_tasks()
-    st.markdown('---')
-    st.subheader('📋 Task List')
-    if st.button("🗑️ Clean Completed", key="clear_daily"):
-        st.session_state.daily_tasks = [task for task in st.session_state.daily_tasks if not task['completed']]
-        save_tasks()
-        st.rerun()
+#Initialize delete state
+if 'delete_task_id' not in st.session_state:
+    st.session_state.delete_task_id = None
 
-    for i,task in enumerate(st.session_state.daily_tasks):
-        col_check, col_info, col_delete = st.columns([1,5,1]) #Adds an addition column per number
+#Filter Tasks
+if filter_select == 'Completed':
+    tasks = [t for t in tasks if t.get('completed', False)]
+elif filter_select == 'Incomplete':
+    tasks = [t for t in tasks if t.get('completed', True)]
 
-        with col_check:
-            completed = st.checkbox('Done', value=task['completed'], key=f'daily_{i}')
-            st.session_state.daily_tasks[i]['completed'] = completed
-            save_tasks()
 
-        with col_info:
-            if task['completed']:
-                st.markdown(f'<s>{task['description']}</s>', unsafe_allow_html=True)
-            else:
-                st.write(f"**{task['description']}**")
-            color = priority_color(task['priority'])
-            st.markdown(f"📅 {task['date']} | Priority: <span style='color:{color}'>{task['priority']}</span>",unsafe_allow_html=True)
+#Display Tasks
+if tasks:
+    for task in tasks:
+        task_id = task.get('id')
 
-        with col_delete:
-            if st.button('🗑️', key=f'delete_daily_{i}'):
-                st.session_state.daily_tasks.pop(i)
-                save_tasks()
+        if st.session_state.delete_task_id == task_id:
+            success = delete_sheety_task(task_id)
+            st.session_state.delete_task_id = None
+            st.rerun()
+
+        if st.session_state.editing_task_id == task_id:
+            #EDIT Task Mode
+            st.markdown(f'### ✏️ Editing Task')
+            with st.form(f'edit_form_{task_id}'):
+                edit_desc = st.text_input('Task Description', value=task.get('description',''))
+                edit_date = st.date_input('Date',value=task.get('date',''),format="MM/DD/YYYY")
+                edit_category = st.text_input('Category',value=task.get('category',''))
+                edit_priority = st.selectbox('Priority',['High','Medium','Low'],
+                                             index=['High','Medium','Low'].index(task.get('priority','Low')))
+                edit_completed = st.checkbox('Completed', value=task.get('completed',False))
+
+                col1,col2 = st.columns(2)
+                with col1:
+                    save_button = st.form_submit_button('💾 Save Changes')
+                with col2:
+                    cancel_button = st.form_submit_button('❌ Cancel')
+
+            if save_button:
+                updated_task = {
+                    'description':edit_desc,
+                    'date': edit_date,
+                    'category':edit_category,
+                    'priority':edit_priority,
+                    'completed':edit_completed
+                }
+                edit_sheety_task(task_id,updated_task)
+                st.session_state.editing_task_id = None
                 st.rerun()
 
-
-with col2:
-    st.header('Weekly Tasks')
-    st.subheader('➕ Add New Task')
-    with st.form('weekly_form'):
-        task_desc = st.text_input('Task Description')
-        task_date = st.date_input('Date')
-        priority = st.selectbox('Priority', ['High', 'Medium', 'Low'])
-        submitted = st.form_submit_button('Add Task')
-    if submitted:
-        task = {
-            'description': task_desc,
-            'date': task_date,
-            'priority': priority,
-            'completed': False,
-        }
-        st.session_state.weekly_tasks.append(task)
-        st.success('Task added!')
-        save_tasks()
-    st.markdown('---')
-
-    st.subheader('📋 Task List')
-    if st.button("🗑️ Clean Completed", key="clear_weekly"):
-        st.session_state.weekly_tasks = [task for task in st.session_state.weekly_tasks if not task['completed']]
-        save_tasks()
-        st.rerun()
-
-
-    for i, task in enumerate(st.session_state.weekly_tasks):
-        col_check, col_info, col_delete = st.columns([1, 5, 1])  # Adds an addition column per number
-
-        with col_check:
-            completed = st.checkbox('Done', value=task['completed'], key=f'weekly_{i}')
-            st.session_state.weekly_tasks[i]['completed'] = completed
-            save_tasks()
-
-        with col_info:
-            if task['completed']:
-                st.markdown(f'<s>{task['description']}</s>', unsafe_allow_html=True)
-            else:
-                st.write(f"**{task['description']}**")
-            color = priority_color(task['priority'])
-            st.markdown(f"📅 {task['date']} | Priority: <span style='color:{color}'>{task['priority']}</span>",unsafe_allow_html=True)
-
-        with col_delete:
-            if st.button('🗑️', key=f'delete_weekly_{i}'):
-                st.session_state.weekly_tasks.pop(i)
-                save_tasks()
+            if cancel_button:
+                st.session_state.editing_task_id = None
                 st.rerun()
 
-with col3:
-    st.header('Monthly Tasks')
-    st.subheader('➕ Add New Task')
-    with st.form('monthly_form'):
-        task_desc = st.text_input('Task Description')
-        task_date = st.date_input('Date')
-        priority = st.selectbox('Priority', ['High', 'Medium', 'Low'])
-        submitted = st.form_submit_button('Add Task')
-    if submitted:
-        task = {
-            'description': task_desc,
-            'date': task_date,
-            'priority': priority,
-            'completed': False,
-        }
-        st.session_state.monthly_tasks.append(task)
-        st.success('Task added!')
-        save_tasks()
-    st.markdown('---')
+        else:
+            #Display Mode
+            col_check, col_info, col_action, col_delete = st.columns([1,5,1,1])
 
-    st.subheader('📋 Task List')
-    if st.button("🗑️ Clean Completed", key="clear_monthly"):
-        st.session_state.monthly_tasks = [task for task in st.session_state.monthly_tasks if not task['completed']]
-        save_tasks()
-        st.rerun()
-    for i, task in enumerate(st.session_state.monthly_tasks):
-        col_check, col_info, col_delete = st.columns([1, 5, 1])  # Adds an addition column per number
+            with col_check:
+                completed = task.get('completed', False)
+                if st.checkbox('Done', value=completed, key=f'checkbox_{task_id}'):
+                    if not completed:
+                        task['completed'] = True
+                        edit_sheety_task(task_id,task)
+                        st.rerun()
+                else:
+                    if completed:
+                        task['completed'] = False
+                        edit_sheety_task(task_id,task)
+                        st.rerun()
 
-        with col_check:
-            completed = st.checkbox('Done', value=task['completed'], key=f'monthly_{i}')
-            st.session_state.monthly_tasks[i]['completed'] = completed
-            save_tasks()
+            with col_info:
+                if task['completed']:
+                    st.markdown(f'<s>{task.get('description')}</s>', unsafe_allow_html=True)
+                else:
+                    st.write(f'**{task.get('description')}**')
+                color = priority_color(task.get('priority', 'Low'))
+                st.markdown(f'📅 {task['date']}'
+                            f'Category: {task['category']}'
+                            f"Priority: <span style='color:{color};'>{task.get('priority', '')}</span>", unsafe_allow_html=True)
 
-        with col_info:
-            if task['completed']:
-                st.markdown(f'<s>{task['description']}</s>', unsafe_allow_html=True)
-            else:
-                st.write(f"**{task['description']}**")
-            color = priority_color(task['priority'])
-            st.markdown(f"📅 {task['date']} | Priority: <span style='color:{color}'>{task['priority']}</span>",unsafe_allow_html=True)
-        with col_delete:
-            if st.button('🗑️', key=f'delete_monthly_{i}'):
-                st.session_state.monthly_tasks.pop(i)
-                save_tasks()
-                st.rerun()
+            with col_action:
+                if st.button('✏️', key=f'edit_{task_id}', help='Edit task'):
+                    st.session_state.editing_task_id = task_id
+                    st.rerun()
+
+            with col_delete:
+                if st.button('❌', key=f'delete_{task_id}', help='Delete task'):
+                    st.session_state.delete_task_id = task_id
+                    st.rerun()
+
+
+            st.markdown('---')
+
+else:
+    st.info('No tasks to display')
 
