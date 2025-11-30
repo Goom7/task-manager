@@ -228,7 +228,7 @@ if tasks:
                 else:
                     st.write(f'**{task.get('description')}** ')
                 color = priority_color(task.get('priority', 'Low'))
-                st.markdown(f'📅 {task['date']}'
+                st.markdown(f'📅 {task['date']} '
                             f'Category: {task['category']} | '
                             f"Priority: <span style='color:{color};'>{task.get('priority', '')}</span>", unsafe_allow_html=True)
 
@@ -247,6 +247,7 @@ if tasks:
 
 else:
     st.info('No tasks to display')
+
 
 
 
