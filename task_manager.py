@@ -3,10 +3,7 @@ import streamlit as st
 import requests
 from requests.auth import HTTPBasicAuth
 from streamlit import rerun
-import dotenv
 
-#Load ENV
-load_dotenv()
 
 #Browser Config ---------------------------------------------------
 st.set_page_config(page_title='Task Manager', page_icon='📝',layout='wide')
@@ -15,17 +12,25 @@ st.set_page_config(page_title='Task Manager', page_icon='📝',layout='wide')
 with st.sidebar:
     st.header('Filter')
     filter_select = st.selectbox("Tasks",['All Tasks', 'Completed','Incomplete'])
+try:
+    #Sheety API -------------------------------------------------------
+    SHEETY_API = os.getenv("SHEETY_API")
+    AUTH_USER = os.getenv("AUTH_USER")
+    AUTH_PASS = os.getenv("AUTH_PASS")
+except(KeyError,FileNotFoundError):
+    try:
+        from dotenv import load_dotenv
+        load_dotenv()
+    except ImportError:
+        pass
+    SHEETY_API = os.getenv("SHEETY_API")
+    AUTH_USER = os.getenv("AUTH_USER")
+    AUTH_PASS = os.getenv("AUTH_PASS")
 
-#Sheety API -------------------------------------------------------
-SHEETY_API = os.getenv("SHEETY_API")
-AUTH_USER = os.getenv("AUTH_USER")
-AUTH_PASS = os.getenv("AUTH_PASS")
 
 if not all([SHEETY_API,AUTH_USER,AUTH_PASS]):
     st.error("Missing API Credentials, Please Check your .env File")
     st.stop()
-
-
 
 #Functions --------------------------------------------------------
 
@@ -242,4 +247,5 @@ if tasks:
 
 else:
     st.info('No tasks to display')
+
 
