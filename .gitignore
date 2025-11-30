@@ -1,0 +1,23 @@
+# Environment variables (NEVER upload this!)
+.env
+
+# Python cache files
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+
+# Virtual environment
+.venv/
+venv/
+ENV/
+
+# Streamlit cache
+.streamlit/
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
